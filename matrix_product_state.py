@@ -1,8 +1,7 @@
 import numpy as np
 
-
 class MatrixProductState:
-    def __init__(self, num_tensors, site_dims: list | int):
+    def __init__(self, num_tensors, site_dims: list | int, verbose=0):
         if isinstance(site_dims, int):
             self.site_dims = [site_dims]*num_tensors
         elif isinstance(site_dims, list):
@@ -10,10 +9,13 @@ class MatrixProductState:
                 raise ValueError(f'Length of `site_dims` must match the number of tensors {num_tensors}')
             self.site_dims = site_dims
 
+        self.verbose = verbose
+
         self.num_tensors = num_tensors
         self.ranks = [2]*(num_tensors - 1)
 
         self.cutoff = 1e-3
+        self.max_rank = 50
 
         first_tensor = [np.random.random(size=(1, self.site_dims[0], 2))]
         last_tensor = [np.random.random(size=(2, self.site_dims[-1], 1))]
@@ -151,11 +153,15 @@ class MatrixProductState:
         if self.merged:
 
             d1, d2, d3, d4 = self.merged_tensor.shape
-            u, s, v_dag = np.linalg.svd(self.merged_tensor.reshape((d1*d2, d3*d4)))
+            try:
+                u, s, v_dag = np.linalg.svd(self.merged_tensor.reshape((d1*d2, d3*d4)))
+            except np.linalg.LinAlgError as e:
+                print(e)
+
 
             new_rank = 0
             for sigma in s:
-                if sigma/s[0] > self.cutoff:
+                if new_rank < self.max_rank and sigma/s[0] > self.cutoff:
                     new_rank += 1
                 else:
                     break
@@ -242,8 +248,15 @@ class MatrixProductState:
     def train(self, num_sweeps):
         for i in range(num_sweeps):
             # alternate sweeping direction, starting left
-            # print(f'Start sweep {i}. Sweep direction: {"right" if i%2 else "left"}')
             self.training_sweep(sweep_right=bool(i%2))
+            if self.verbose:
+                print(f'Finished sweep {i}. Sweep direction: {"right" if i%2 else "left"}')
+                print(f'Ranks: {self.ranks}')
+                latest_losses = {
+                    dataset_name: losses[-1]
+                    for dataset_name, losses in self.losses.items()
+                }
+                print(f'Losses: {latest_losses}')
 
 
     def sample(self, num_samples):
